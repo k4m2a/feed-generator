@@ -1,154 +1,132 @@
-# ATProto Feed Generator
+# CoSeeker Feed Generator
 
-This is a starter kit for creating ATProto Feed Generators. It's not feature complete, but should give you a good starting ground off of which to build and deploy a feed.
+An [AT Protocol](https://atproto.com) feed generator that serves three Bluesky custom
+feeds, each surfacing posts from the members of a Bluesky list owned by
+[`publisher.coseeker.org`](https://bsky.app/profile/publisher.coseeker.org)
+(`did:plc:ieyfjh6ystyufa3a7pi3jw5q`).
 
-## Overview
+| Feed (rkey) | Display name | Source list |
+|---|---|---|
+| `md-parivaar` | MD Parivaar | `app.bsky.graph.list/3moflnppcac2d` |
+| `k4m2a` | K4M2A | `app.bsky.graph.list/3mofllwjqdk2d` |
+| `coseeker` | CoSeeker | `app.bsky.graph.list/3moflmrivgk2d` |
 
-Feed Generators are services that provide custom algorithms to users through the AT Protocol.
+Each feed is the equivalent of a Skyfeed "list input → sort by created_at" block: a post is
+included iff its author is on the list, newest first.
 
-They work very simply: the server receives a request from a user's server and returns a list of [post URIs](https://atproto.com/specs/at-uri-scheme) with some optional metadata attached. Those posts are then hydrated into full views by the requesting server and sent back to the client. This route is described in the [`app.bsky.feed.getFeedSkeleton` lexicon](https://docs.bsky.app/docs/api/app-bsky-feed-get-feed-skeleton).
+> Built on the [Bluesky feed-generator starter kit](https://github.com/bluesky-social/feed-generator).
+> The repo also contains a parallel Go implementation under [`go/`](go/); the deployed
+> service is the **TypeScript** one in [`src/`](src/).
 
-A Feed Generator service can host one or more algorithms. The service itself is identified by DID, while each algorithm that it hosts is declared by a record in the repo of the account that created it. For instance, feeds offered by Bluesky will likely be declared in `@bsky.app`'s repo. Therefore, a given algorithm is identified by the at-uri of the declaration record. This declaration record includes a pointer to the service's DID along with some profile information for the feed.
+## How it works
 
-The general flow of providing a custom algorithm to a user is as follows:
-- A user requests a feed from their server (PDS) using the at-uri of the declared feed
-- The PDS resolves the at-uri and finds the DID doc of the Feed Generator
-- The PDS sends a `getFeedSkeleton` request to the service endpoint declared in the Feed Generator's DID doc
-  - This request is authenticated by a JWT signed by the user's repo signing key
-- The Feed Generator returns a skeleton of the feed to the user's PDS
-- The PDS hydrates the feed (user info, post contents, aggregates, etc.)
-  - In the future, the PDS will hydrate the feed with the help of an App View, but for now, the PDS handles hydration itself
-- The PDS returns the hydrated feed to the user
+1. **List membership** — [`src/util/lists.ts`](src/util/lists.ts) (`ListManager`) resolves
+   each list's members from the public AppView (`app.bsky.graph.getList`, no auth), caches
+   them in memory, and refreshes every ~5 minutes, so the feeds track list edits without a
+   redeploy.
+2. **Ingest** — [`src/subscription.ts`](src/subscription.ts) (`JetstreamSubscription`)
+   consumes [Jetstream](https://github.com/bluesky-social/jetstream) filtered server-side to
+   `app.bsky.feed.post` events from **only the current list members** (`wantedDids`).
+   Matching posts are stored in SQLite tagged with their author DID; deletes are removed.
+   When list membership changes, the subscription reconnects with the updated `wantedDids`
+   (resuming from the stored `time_us` cursor).
+3. **Serving** — each feed handler ([`src/algos/list-feed.ts`](src/algos/list-feed.ts))
+   returns the stored posts whose author is a member of its list, newest first, with
+   timestamp-based cursor pagination. Feeds are registered in
+   [`src/algos/index.ts`](src/algos/index.ts) and auto-advertised by
+   `app.bsky.feed.describeFeedGenerator`.
 
-For users, this should feel like visiting a page in the app. Once they subscribe to a custom algorithm, it will appear in their home interface as one of their available feeds.
+To add or change feeds, edit the `FEEDS` table in
+[`src/algos/list-feed.ts`](src/algos/list-feed.ts) (rkey → list URI + display info).
 
-## Getting Started
+## Configuration
 
-We've set up this simple server with SQLite to store and query data. Feel free to switch this out for whichever database you prefer.
+All config is via environment variables (`.env`, gitignored — see `.env.example`):
 
-Next, you will need to do two things:
+| Variable | Value used in production |
+|---|---|
+| `FEEDGEN_HOSTNAME` | `feeds.coseeker.com` |
+| `FEEDGEN_SERVICE_DID` | `did:web:feeds.coseeker.com` |
+| `FEEDGEN_PUBLISHER_DID` | `did:plc:ieyfjh6ystyufa3a7pi3jw5q` (publisher.coseeker.org) |
+| `FEEDGEN_SQLITE_LOCATION` | a persistent path, e.g. `feed.sqlite` (not `:memory:`) |
+| `FEEDGEN_SUBSCRIPTION_ENDPOINT` | `wss://jetstream2.us-east.bsky.network/subscribe` |
+| `FEEDGEN_LISTENHOST` | `127.0.0.1` (behind a reverse proxy) |
+| `FEEDGEN_PORT` | `3000` |
+| `FEEDGEN_SUBSCRIPTION_RECONNECT_DELAY` | `3000` (ms) |
 
-1. Implement indexing logic in `src/subscription.ts`.
+The **service host** (`feeds.coseeker.com`) is independent of the **publishing account**
+(`publisher.coseeker.org`). The service DID is a `did:web` derived from the hostname.
 
-   This will subscribe to the repo subscription stream on startup, parse events and index them according to your provided logic.
+## Running locally
 
-2. Implement feed generation logic in `src/algos`
-
-   For inspiration, we've provided a very simple feed algorithm (`whats-alf`) that returns all posts related to the titular character of the TV show ALF.
-
-   You can either edit it or add another algorithm alongside it. The types are in place, and you will just need to return something that satisfies the `SkeletonFeedPost[]` type.
-
-We've taken care of setting this server up with a did:web. However, you're free to switch this out for did:plc if you like - you may want to if you expect this Feed Generator to be long-standing and possibly migrating domains.
-
-### Deploying your feed
-Your feed will need to be accessible at the value supplied to the `FEEDGEN_HOSTNAME` environment variable.
-
-The service must be set up to respond to HTTPS queries over port 443.
-
-### Publishing your feed
-
-To publish your feed, go to the script at `scripts/publishFeedGen.ts` and fill in the variables at the top. Examples are included, and some are optional. To publish your feed generator, simply run `yarn publishFeed`.
-
-To update your feed's display data (name, avatar, description, etc.), just update the relevant variables and re-run the script.
-
-After successfully running the script, you should be able to see your feed from within the app, as well as share it by embedding a link in a post (similar to a quote post).
-
-## Running the Server
-
-Install dependencies with `yarn` and then run the server with `yarn start`. This will start the server on port 3000, or what's defined in `.env`. You can then watch the firehose output in the console and access the output of the default custom ALF feed at [http://localhost:3000/xrpc/app.bsky.feed.getFeedSkeleton?feed=at://did:example:alice/app.bsky.feed.generator/whats-alf](http://localhost:3000/xrpc/app.bsky.feed.getFeedSkeleton?feed=at://did:example:alice/app.bsky.feed.generator/whats-alf).
-
-Alternatively, run the server with Docker, e.g., `docker build -t feed-generator . && docker run feed-generator`.
-
-## Some Details
-
-### Skeleton Metadata
-
-The skeleton that a Feed Generator puts together is, in its simplest form, a list of post URIs.
-
-```ts
-[
-  {post: 'at://did:example:1234/app.bsky.feed.post/1'},
-  {post: 'at://did:example:1234/app.bsky.feed.post/2'},
-  {post: 'at://did:example:1234/app.bsky.feed.post/3'}
-]
+```bash
+yarn install
+cp .env.example .env   # then edit values
+yarn build             # tsc → dist/
+yarn start             # ts-node src/index.ts
 ```
 
-However, we include an additional location to attach some context. Here is the full schema:
+Verify:
 
-```ts
-type SkeletonItem = {
-  post: string // post URI
-
-  // optional reason for inclusion in the feed
-  // (generally to be displayed in client)
-  reason?: Reason
-}
-
-// for now, the only defined reason is a repost, but this is open to extension
-type Reason = ReasonRepost
-
-type ReasonRepost = {
-  $type: 'app.bsky.feed.defs#skeletonReasonRepost'
-  repost: string // repost URI
-}
+```bash
+curl -s "http://127.0.0.1:3000/xrpc/app.bsky.feed.describeFeedGenerator" | jq
+curl -s "http://127.0.0.1:3000/xrpc/app.bsky.feed.getFeedSkeleton?feed=at://did:plc:ieyfjh6ystyufa3a7pi3jw5q/app.bsky.feed.generator/md-parivaar&limit=10" | jq
 ```
 
-This metadata serves two purposes:
+> Feeds only contain posts seen **after** the service starts — there is no backfill. Leave
+> it running (or wait for a list member to post) to see items appear.
 
-1. To aid the PDS in hydrating all relevant post information
-2. To give a cue to the client in terms of context to display when rendering a post
+## Deployment
 
-### Authentication
+The service runs on a small Linux host (AWS Lightsail, Ubuntu 24.04) behind Caddy for TLS.
 
-If you are creating a generic feed that does not differ for different users, you do not need to check auth. But if a user's state (such as follows or likes) is taken into account, we _strongly_ encourage you to validate their auth token.
+- **App** runs as a `systemd` service (`feedgen`) executing `node dist/index.js` from the
+  repo directory, with `Restart=always`. SQLite lives on the instance disk so feed history
+  survives restarts.
+- **Caddy** terminates TLS and reverse-proxies the host to the app:
 
-Users are authenticated with a simple JWT signed by the user's repo signing key.
+  ```caddy
+  feeds.coseeker.com {
+      reverse_proxy 127.0.0.1:3000
+  }
+  ```
 
-This JWT header/payload takes the format:
-```ts
-const header = {
-  type: "JWT",
-  alg: "ES256K" // (key algorithm) - in this case secp256k1
-}
-const payload = {
-  iss: "did:example:alice", // (issuer) the requesting user's DID
-  aud: "did:example:feedGenerator", // (audience) the DID of the Feed Generator
-  exp: 1683643619 // (expiration) unix timestamp in seconds
-}
+- **DNS**: `feeds.coseeker.com` A-record → the instance's static IP.
+- **Firewall**: ports 80 and 443 open to the internet (Caddy uses them for ACME + serving).
+- A swap file is recommended on small (≤512 MB RAM) instances so `yarn install` / `tsc`
+  don't OOM.
+
+This must serve `https://feeds.coseeker.com/.well-known/did.json` (the `did:web` document)
+plus the `app.bsky.feed.getFeedSkeleton` and `describeFeedGenerator` XRPC endpoints.
+
+Handy ops commands on the host:
+
+```bash
+sudo journalctl -u feedgen -f      # app logs
+sudo systemctl restart feedgen     # restart after a deploy (git pull && yarn build first)
 ```
 
-We provide utilities for verifying user JWTs in the `@atproto/xrpc-server` package, and you can see them in action in `src/auth.ts`.
+## Publishing the feeds
 
-### Pagination
-You'll notice that the `getFeedSkeleton` method returns a `cursor` in its response and takes a `cursor` param as input.
+Feed records are published to the **publisher.coseeker.org** repo (this is what makes the
+feeds discoverable and points them at the service DID). With `.env` configured, run:
 
-This cursor is treated as an opaque value and fully at the Feed Generator's discretion. It is simply passed through the PDS directly to and from the client.
+```bash
+yarn publishFeed
+```
 
-We strongly encourage that the cursor be _unique per feed item_ to prevent unexpected behavior in pagination.
+Run it once per feed, logged in as `publisher.coseeker.org` (use a Bluesky **App
+Password**, not the main password), with:
 
-We recommend, for instance, a compound cursor with a timestamp + a CID:
-`1683654690921::bafyreia3tbsfxe3cc75xrxyyn6qc42oupi73fxiox76prlyi5bpx7hr72u`
+| recordName | displayName |
+|---|---|
+| `md-parivaar` | MD Parivaar |
+| `k4m2a` | K4M2A |
+| `coseeker` | CoSeeker |
 
-## Suggestions for Implementation
+To update a feed's display data (name, description, avatar), re-run with the same
+`recordName`. To remove a feed record, use `yarn unpublishFeed`.
 
-How a feed generator fulfills the `getFeedSkeleton` request is completely at their discretion. At the simplest end, a Feed Generator could supply a "feed" that only contains some hardcoded posts.
+## License
 
-For most use cases, we recommend subscribing to the firehose at `com.atproto.sync.subscribeRepos`. This websocket will send you every record that is published on the network. Since Feed Generators do not need to provide hydrated posts, you can index as much or as little of the firehose as necessary.
-
-Depending on your algorithm, you likely do not need to keep posts around for long. Unless your algorithm is intended to provide "posts you missed" or something similar, you can likely garbage collect any data that is older than 48 hours.
-
-Some examples:
-
-### Reimplementing What's Hot
-To reimplement "What's Hot", you may subscribe to the firehose and filter for all posts and likes (ignoring profiles/reposts/follows/etc.). You would keep a running tally of likes per post and when a PDS requests a feed, you would send the most recent posts that pass some threshold of likes.
-
-### A Community Feed
-You might create a feed for a given community by compiling a list of DIDs within that community and filtering the firehose for all posts from users within that list.
-
-### A Topical Feed
-To implement a topical feed, you might filter the algorithm for posts and pass the post text through some filtering mechanism (an LLM, a keyword matcher, etc.) that filters for the topic of your choice.
-
-## Community Feed Generator Templates
-
-- [Python](https://github.com/MarshalX/bluesky-feed-generator) - [@MarshalX](https://github.com/MarshalX)
-- [Ruby](https://github.com/mackuba/bluesky-feeds-rb) - [@mackuba](https://github.com/mackuba)
+MIT — see [LICENSE](LICENSE).

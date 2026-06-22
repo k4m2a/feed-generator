@@ -140,3 +140,6 @@ go/go
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+
+# SSH keys (e.g. Lightsail default key)
+*.pem

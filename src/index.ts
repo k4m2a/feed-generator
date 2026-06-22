@@ -17,6 +17,11 @@ const run = async () => {
       maybeStr(process.env.FEEDGEN_PUBLISHER_DID) ?? 'did:example:alice',
     subscriptionReconnectDelay:
       maybeInt(process.env.FEEDGEN_SUBSCRIPTION_RECONNECT_DELAY) ?? 3000,
+    autoBackfill: maybeStr(process.env.FEEDGEN_AUTO_BACKFILL) !== 'false',
+    appview:
+      maybeStr(process.env.FEEDGEN_APPVIEW) ?? 'https://public.api.bsky.app',
+    backfillMaxPerAuthor:
+      maybeInt(process.env.FEEDGEN_BACKFILL_MAX_PER_AUTHOR) ?? 1000,
     hostname,
     serviceDid,
   })

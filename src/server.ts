@@ -9,6 +9,7 @@ import { createDb, Database, migrateToLatest } from './db'
 import { JetstreamSubscription } from './subscription'
 import { AppContext, Config } from './config'
 import { ListManager } from './util/lists'
+import { backfillAuthors } from './util/backfill'
 import { listUris } from './algos/list-feed'
 import wellKnown from './well-known'
 
@@ -38,6 +39,20 @@ export class FeedGenerator {
     const app = express()
     const db = createDb(cfg.sqliteLocation)
     const lists = new ListManager(listUris())
+    // When a member joins a tracked list, pull their existing posts into the
+    // feed in the background so they're not limited to posts seen live from
+    // the moment they joined. Initial membership is left to `yarn backfill`.
+    if (cfg.autoBackfill) {
+      lists.onMembersAdded = (dids) => {
+        console.log(`auto-backfilling ${dids.length} new member(s)`)
+        backfillAuthors(db, dids, {
+          appview: cfg.appview,
+          maxPerAuthor: cfg.backfillMaxPerAuthor,
+        })
+          .then((n) => console.log(`auto-backfill complete — ${n} posts added`))
+          .catch((err) => console.error('auto-backfill error', err))
+      }
+    }
     const firehose = new JetstreamSubscription(
       db,
       cfg.subscriptionEndpoint,

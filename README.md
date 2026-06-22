@@ -108,24 +108,40 @@ sudo systemctl restart feedgen     # restart after a deploy (git pull && yarn bu
 
 ## Publishing the feeds
 
-Feed records are published to the **publisher.coseeker.org** repo (this is what makes the
-feeds discoverable and points them at the service DID). With `.env` configured, run:
+Feed records are published to the **publisher.coseeker.org** repo — this is what makes the
+feeds discoverable and points them at the service DID. Use a Bluesky **App Password** (not
+the main password).
+
+### Batch (recommended)
+
+Publishes/updates all feeds in `FEEDS` at once, prompting only for the app password:
 
 ```bash
-yarn publishFeed
+yarn publishAll
 ```
 
-Run it once per feed, logged in as `publisher.coseeker.org` (use a Bluesky **App
-Password**, not the main password), with:
+It reads display names and descriptions from
+[`src/algos/list-feed.ts`](src/algos/list-feed.ts), so editing a feed there and re-running
+updates the live record. Login defaults to `publisher.coseeker.org` on
+`https://coseeker.org`; override with `PUBLISH_HANDLE`, `PUBLISH_SERVICE`, or skip the
+prompt with `BLUESKY_APP_PASSWORD`.
 
-| recordName | displayName |
-|---|---|
-| `md-parivaar` | MD Parivaar |
-| `k4m2a` | K4M2A |
-| `coseeker` | CoSeeker |
+### Avatars
 
-To update a feed's display data (name, description, avatar), re-run with the same
-`recordName`. To remove a feed record, use `yarn unpublishFeed`.
+Drop a square **PNG or JPEG** (≈1000×1000, under ~1 MB) into [`avatars/`](avatars/) named
+after the feed's rkey — `avatars/md-parivaar.png`, `avatars/k4m2a.png`,
+`avatars/coseeker.png` — and `yarn publishAll` uploads it automatically. If no file is
+present, the existing avatar on the record is preserved.
+
+### Single feed (interactive)
+
+The original starter-kit flow, one feed at a time:
+
+```bash
+yarn publishFeed     # prompts for handle, password, recordName, displayName, ...
+```
+
+To remove a feed record, use `yarn unpublishFeed`.
 
 ## License
 

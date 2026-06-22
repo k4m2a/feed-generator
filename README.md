@@ -27,7 +27,8 @@ included iff its author is on the list, newest first.
 2. **Ingest** — [`src/subscription.ts`](src/subscription.ts) (`JetstreamSubscription`)
    consumes [Jetstream](https://github.com/bluesky-social/jetstream) filtered server-side to
    `app.bsky.feed.post` events from **only the current list members** (`wantedDids`).
-   Matching posts are stored in SQLite tagged with their author DID; deletes are removed.
+   Matching **top-level** posts (replies and reposts excluded) are stored in SQLite tagged
+   with their author DID; deletes are removed.
    When list membership changes, the subscription reconnects with the updated `wantedDids`
    (resuming from the stored `time_us` cursor).
 3. **Serving** — each feed handler ([`src/algos/list-feed.ts`](src/algos/list-feed.ts))

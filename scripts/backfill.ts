@@ -11,12 +11,13 @@ import { listUris } from '../src/algos/list-feed'
 //   yarn backfill
 //
 // Posts are stored with indexedAt = the post's createdAt, so they interleave
-// chronologically with live-indexed posts. Reposts are skipped (the feeds only
-// show a member's own posts). Re-running is safe — existing rows are left as-is.
+// chronologically with live-indexed posts. Replies and reposts are skipped (the
+// feeds show a member's own top-level posts). Re-running is safe — existing rows
+// are left as-is.
 //
 // Env: APPVIEW (default https://public.api.bsky.app),
 //      BACKFILL_MAX_PER_AUTHOR (default 1000, 0 = unlimited),
-//      BACKFILL_INCLUDE_REPLIES (default true).
+//      BACKFILL_INCLUDE_REPLIES (default false — set to true to include replies).
 
 const run = async () => {
   dotenv.config()
@@ -24,7 +25,7 @@ const run = async () => {
   const sqliteLocation = process.env.FEEDGEN_SQLITE_LOCATION ?? ':memory:'
   const appview = process.env.APPVIEW ?? 'https://public.api.bsky.app'
   const maxPerAuthor = parseInt(process.env.BACKFILL_MAX_PER_AUTHOR ?? '1000', 10)
-  const includeReplies = process.env.BACKFILL_INCLUDE_REPLIES !== 'false'
+  const includeReplies = process.env.BACKFILL_INCLUDE_REPLIES === 'true'
   const filter = includeReplies ? 'posts_with_replies' : 'posts_no_replies'
 
   const db = createDb(sqliteLocation)

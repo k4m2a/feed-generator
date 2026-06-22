@@ -127,6 +127,8 @@ export class JetstreamSubscription {
       // Safety belt: Jetstream already filters by wantedDids, but membership
       // may have just changed before a reconnect lands.
       if (!commit.cid || !this.lists.isMember(evt.did)) return
+      // Top-level posts only — skip replies.
+      if ((commit.record as { reply?: unknown } | undefined)?.reply) return
       await this.db
         .insertInto('post')
         .values({

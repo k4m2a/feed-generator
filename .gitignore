@@ -135,3 +135,8 @@ dist
 
 # Go build output
 go/go
+
+# SQLite database (feed generator runtime state)
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal

@@ -3,12 +3,12 @@ import {
   QueryParams,
   OutputSchema as AlgoOutput,
 } from '../lexicon/types/app/bsky/feed/getFeedSkeleton'
-import * as whatsAlf from './whats-alf'
+import { FEEDS, makeListFeed } from './list-feed'
 
 type AlgoHandler = (ctx: AppContext, params: QueryParams) => Promise<AlgoOutput>
 
-const algos: Record<string, AlgoHandler> = {
-  [whatsAlf.shortname]: whatsAlf.handler,
-}
+const algos: Record<string, AlgoHandler> = Object.fromEntries(
+  Object.entries(FEEDS).map(([rkey, def]) => [rkey, makeListFeed(def.listUri)]),
+)
 
 export default algos

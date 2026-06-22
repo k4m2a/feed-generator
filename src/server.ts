@@ -6,33 +6,44 @@ import { createServer } from './lexicon'
 import feedGeneration from './methods/feed-generation'
 import describeGenerator from './methods/describe-generator'
 import { createDb, Database, migrateToLatest } from './db'
-import { FirehoseSubscription } from './subscription'
+import { JetstreamSubscription } from './subscription'
 import { AppContext, Config } from './config'
+import { ListManager } from './util/lists'
+import { listUris } from './algos/list-feed'
 import wellKnown from './well-known'
 
 export class FeedGenerator {
   public app: express.Application
   public server?: http.Server
   public db: Database
-  public firehose: FirehoseSubscription
+  public firehose: JetstreamSubscription
+  public lists: ListManager
   public cfg: Config
 
   constructor(
     app: express.Application,
     db: Database,
-    firehose: FirehoseSubscription,
+    firehose: JetstreamSubscription,
+    lists: ListManager,
     cfg: Config,
   ) {
     this.app = app
     this.db = db
     this.firehose = firehose
+    this.lists = lists
     this.cfg = cfg
   }
 
   static create(cfg: Config) {
     const app = express()
     const db = createDb(cfg.sqliteLocation)
-    const firehose = new FirehoseSubscription(db, cfg.subscriptionEndpoint)
+    const lists = new ListManager(listUris())
+    const firehose = new JetstreamSubscription(
+      db,
+      cfg.subscriptionEndpoint,
+      lists,
+      cfg.subscriptionReconnectDelay,
+    )
 
     const didCache = new MemoryCache()
     const didResolver = new DidResolver({
@@ -51,6 +62,7 @@ export class FeedGenerator {
     const ctx: AppContext = {
       db,
       didResolver,
+      lists,
       cfg,
     }
     feedGeneration(server, ctx)
@@ -58,12 +70,14 @@ export class FeedGenerator {
     app.use(server.xrpc.router)
     app.use(wellKnown(ctx))
 
-    return new FeedGenerator(app, db, firehose, cfg)
+    return new FeedGenerator(app, db, firehose, lists, cfg)
   }
 
   async start(): Promise<http.Server> {
     await migrateToLatest(this.db)
-    this.firehose.run(this.cfg.subscriptionReconnectDelay)
+    // Load list membership before subscribing so wantedDids is populated.
+    await this.lists.start()
+    this.firehose.start()
     this.server = this.app.listen(this.cfg.port, this.cfg.listenhost)
     await events.once(this.server, 'listening')
     return this.server

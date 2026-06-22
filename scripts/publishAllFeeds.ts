@@ -56,27 +56,61 @@ const run = async () => {
   console.log(`\nPublishing ${Object.keys(FEEDS).length} feeds as ${handle}`)
   console.log(`  service DID: ${feedGenDid}\n`)
 
+  const failures: string[] = []
   for (const [rkey, def] of Object.entries(FEEDS)) {
-    const avatar = await resolveAvatar(agent, repo, rkey)
-    await agent.api.com.atproto.repo.putRecord({
-      repo,
-      collection: ids.AppBskyFeedGenerator,
-      rkey,
-      record: {
-        did: feedGenDid,
-        displayName: def.displayName,
-        description: def.description,
-        avatar,
-        createdAt: new Date().toISOString(),
-        contentMode: AppBskyFeedDefs.CONTENTMODEUNSPECIFIED,
-      },
-    })
-    console.log(
-      `  ✓ ${rkey} — ${def.displayName}${avatar ? ' (avatar set)' : ''}`,
-    )
+    try {
+      const avatar = await resolveAvatar(agent, repo, rkey)
+      await withRetry(() =>
+        agent.api.com.atproto.repo.putRecord({
+          repo,
+          collection: ids.AppBskyFeedGenerator,
+          rkey,
+          record: {
+            did: feedGenDid,
+            displayName: def.displayName,
+            description: def.description,
+            avatar,
+            createdAt: new Date().toISOString(),
+            contentMode: AppBskyFeedDefs.CONTENTMODEUNSPECIFIED,
+          },
+        }),
+      )
+      console.log(
+        `  ✓ ${rkey} — ${def.displayName}${avatar ? ' (avatar set)' : ''}`,
+      )
+    } catch (err: any) {
+      failures.push(rkey)
+      console.error(`  ✗ ${rkey} — ${err?.status ?? ''} ${err?.error ?? err?.message ?? err}`)
+    }
   }
 
+  if (failures.length > 0) {
+    console.error(
+      `\n${failures.length} feed(s) failed: ${failures.join(', ')}. Re-run \`yarn publishAll\` to retry.`,
+    )
+    process.exit(1)
+  }
   console.log('\nAll done 🎉')
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+// Retry a call on transient 5xx errors (the PDS occasionally returns 500).
+const withRetry = async <T>(fn: () => Promise<T>, tries = 3): Promise<T> => {
+  let lastErr: any
+  for (let i = 0; i < tries; i++) {
+    try {
+      return await fn()
+    } catch (err: any) {
+      lastErr = err
+      if (err?.status >= 500 && i < tries - 1) {
+        await sleep(1000 * (i + 1))
+        continue
+      }
+      throw err
+    }
+  }
+  throw lastErr
 }
 
 // Returns the blob to use for a feed's avatar: a fresh upload if an image file
@@ -97,17 +131,21 @@ const resolveAvatar = async (
       throw err
     }
     const encoding = ext === 'png' ? 'image/png' : 'image/jpeg'
-    const res = await agent.api.com.atproto.repo.uploadBlob(img, { encoding })
+    const res = await withRetry(() =>
+      agent.api.com.atproto.repo.uploadBlob(img, { encoding }),
+    )
     return res.data.blob
   }
 
   // No new image — keep the existing avatar if the record already exists.
   try {
-    const existing = await agent.api.com.atproto.repo.getRecord({
-      repo,
-      collection: ids.AppBskyFeedGenerator,
-      rkey,
-    })
+    const existing = await withRetry(() =>
+      agent.api.com.atproto.repo.getRecord({
+        repo,
+        collection: ids.AppBskyFeedGenerator,
+        rkey,
+      }),
+    )
     const value = existing.data.value as { avatar?: BlobRef }
     return value.avatar
   } catch {

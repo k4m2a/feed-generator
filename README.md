@@ -74,8 +74,10 @@ curl -s "http://127.0.0.1:3000/xrpc/app.bsky.feed.describeFeedGenerator" | jq
 curl -s "http://127.0.0.1:3000/xrpc/app.bsky.feed.getFeedSkeleton?feed=at://did:plc:ieyfjh6ystyufa3a7pi3jw5q/app.bsky.feed.generator/md-parivaar&limit=10" | jq
 ```
 
-> Feeds only contain posts seen **after** the service starts — there is no backfill. Leave
-> it running (or wait for a list member to post) to see items appear.
+> Live indexing only captures posts seen **after** the service starts. To seed a feed with
+> members' existing posts, run `yarn backfill` once. After that, whenever someone joins a
+> tracked list the service auto-backfills their existing posts in the background (toggle with
+> `FEEDGEN_AUTO_BACKFILL`).
 
 ## Deployment
 

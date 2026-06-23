@@ -8,10 +8,16 @@ export class ListManager {
   private byList: Map<string, Set<string>> = new Map()
   private union: Set<string> = new Set()
   private timer?: NodeJS.Timeout
+  private loaded = false
 
   // Invoked after a refresh whenever the union of all members changed.
   // The Jetstream subscription uses this to reconnect with new wantedDids.
   public onChange?: () => void
+
+  // Invoked after a refresh with the DIDs of members that joined since the last
+  // refresh (never on the initial load — that's the backfill script's job).
+  // Used to auto-backfill a new member's existing posts into the feed.
+  public onMembersAdded?: (dids: string[]) => void
 
   constructor(
     public listUris: string[],
@@ -74,13 +80,20 @@ export class ListManager {
     }
 
     const changed = !setsEqual(this.union, nextUnion)
+    // New members relative to the previous union; skipped on the initial load.
+    const added = this.loaded
+      ? [...nextUnion].filter((did) => !this.union.has(did))
+      : []
+
     this.byList = nextByList
     this.union = nextUnion
+    this.loaded = true
 
     console.log(
       `list membership refreshed: ${nextUnion.size} unique members across ${this.listUris.length} lists`,
     )
     if (changed) this.onChange?.()
+    if (added.length > 0) this.onMembersAdded?.(added)
   }
 
   // Initial load plus periodic refresh.

@@ -1,0 +1,115 @@
+name: deploy-coolify
+
+# Build the feed-generator Docker image, push it to GHCR, then ask Coolify to
+# roll out a new deployment on the k4m2a-core server.
+#
+# The image is built here rather than on the server on purpose: the box also
+# hosts the PDS and social-app, so it only ever pulls the finished image.
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-push-deploy:
+    # Only run in our fork, never if this workflow is pulled elsewhere.
+    if: github.repository == 'k4m2a/feed-generator'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Compute short SHA
+        id: vars
+        run: echo "short_sha=${GITHUB_SHA::9}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # `latest` is what the Coolify compose file tracks; the SHA tag is kept
+      # so a specific build can be pinned by hand when rolling back.
+      - name: Build and push image
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.short_sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Trigger Coolify deployment
+        env:
+          COOLIFY_URL: ${{ vars.COOLIFY_URL }}
+          COOLIFY_UUID: ${{ vars.COOLIFY_RESOURCE_UUID }}
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          response=$(curl -sS --fail-with-body -X GET \
+            -H "Authorization: Bearer $COOLIFY_TOKEN" \
+            "$COOLIFY_URL/api/v1/deploy?uuid=$COOLIFY_UUID&force=false")
+
+          echo "$response"
+
+          # A service resource (docker-compose stack) returns
+          #   {"deployments":[{"message":"...","resource_uuid":"..."}]}
+          # with no deployment_uuid to follow - unlike an application resource.
+          # So confirm the deploy was accepted here, and gate on the app coming
+          # back up in the next step rather than polling a per-deployment record
+          # that services do not produce.
+          echo "$response" | python3 -c '
+          import sys, json
+          d = json.load(sys.stdin).get("deployments") or []
+          if not d:
+              sys.exit("no deployment was queued")
+          print("queued:", d[0].get("message", "(no message)"))'
+
+      # Coolify recreates the compose service asynchronously, so poll a real
+      # request path through Traefik until the new container is serving again.
+      # The did:web document is a stable 200 and cheap to hit.
+      - name: Wait for the app to come back up
+        env:
+          HEALTHCHECK_URL: ${{ vars.COOLIFY_HEALTHCHECK_URL }}
+        run: |
+          set -euo pipefail
+
+          url="${HEALTHCHECK_URL:-https://feeds.coseeker.com/.well-known/did.json}"
+
+          # Give the recreate a moment to begin so we do not observe the old
+          # container still up and exit before the swap has even started.
+          sleep 20
+
+          for _ in $(seq 1 60); do
+            code=$(curl -sS -o /dev/null -m 10 -w '%{http_code}' "$url" || echo 000)
+            echo "$url -> HTTP $code"
+            if [ "$code" = "200" ]; then
+              echo "app is serving again"
+              exit 0
+            fi
+            sleep 5
+          done
+
+          echo "timed out waiting for the app to come back up"
+          exit 1

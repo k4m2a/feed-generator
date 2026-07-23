@@ -1,0 +1,11 @@
+# Keep the build context small and never bake host state into the image.
+node_modules
+dist
+.git
+.env
+*.sqlite
+*.sqlite-*
+avatars
+npm-debug.log*
+yarn-error.log*
+.DS_Store

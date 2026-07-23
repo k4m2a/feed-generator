@@ -1,0 +1,56 @@
+# Coolify "Docker Compose" service stack for the feed-generator.
+#
+# This is the source-of-truth for what runs on the k4m2a-core (Coolify) box.
+# Paste it into the Coolify resource's "Edit Compose File" screen (the same
+# place social-app's compose lives). CI never touches this file directly —
+# GitHub Actions builds & pushes the image, then calls the Coolify deploy API,
+# and Coolify pulls `:latest` per this compose.
+#
+# Two things differ from the old AWS Lightsail / systemd + Caddy setup:
+#   1. FEEDGEN_LISTENHOST is 0.0.0.0 (Coolify's Traefik proxies over the docker
+#      network; there is no localhost-only Caddy on the same host anymore).
+#   2. FEEDGEN_SQLITE_LOCATION lives on a named volume so feed history survives
+#      redeploys — a redeploy recreates the container, and an unmounted sqlite
+#      would be wiped.
+#
+# SERVICE_FQDN_* is Coolify's magic var: it makes Coolify generate the Traefik
+# labels + TLS cert for feeds.coseeker.com and inject the domain. (You can
+# instead set the domain in the Coolify UI, exactly like you did for social-app.)
+
+services:
+  feed-generator:
+    image: ghcr.io/k4m2a/feed-generator:latest
+    restart: unless-stopped
+    environment:
+      - SERVICE_FQDN_FEEDGENERATOR_3000=https://feeds.coseeker.com
+
+      - FEEDGEN_HOSTNAME=feeds.coseeker.com
+      - FEEDGEN_SERVICE_DID=did:web:feeds.coseeker.com
+      - FEEDGEN_PUBLISHER_DID=did:plc:ieyfjh6ystyufa3a7pi3jw5q
+
+      # Persistent sqlite on the named volume below — NOT the container fs.
+      - FEEDGEN_SQLITE_LOCATION=/data/feed.sqlite
+
+      - FEEDGEN_SUBSCRIPTION_ENDPOINT=wss://jetstream2.us-east.bsky.network/subscribe
+      - FEEDGEN_SUBSCRIPTION_RECONNECT_DELAY=3000
+
+      # Bind all interfaces so Traefik can reach it over the docker network.
+      - FEEDGEN_LISTENHOST=0.0.0.0
+      - FEEDGEN_PORT=3000
+
+      - FEEDGEN_AUTO_BACKFILL=true
+      - FEEDGEN_APPVIEW=https://public.api.bsky.app
+      - FEEDGEN_BACKFILL_MAX_PER_AUTHOR=50
+    volumes:
+      - feedgen-data:/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "node -e \"require('http').get('http://127.0.0.1:3000/.well-known/did.json',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  feedgen-data:

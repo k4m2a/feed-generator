@@ -81,32 +81,48 @@ curl -s "http://127.0.0.1:3000/xrpc/app.bsky.feed.getFeedSkeleton?feed=at://did:
 
 ## Deployment
 
-The service runs on a small Linux host (AWS Lightsail, Ubuntu 24.04) behind Caddy for TLS.
+The service runs as a Docker container on the shared **k4m2a-core** box, managed by
+[Coolify](https://coolify.io) alongside the PDS and social-app. Coolify's Traefik proxy
+terminates TLS for `feeds.coseeker.com`; there is no per-host Caddy anymore.
 
-- **App** runs as a `systemd` service (`feedgen`) executing `node dist/index.js` from the
-  repo directory, with `Restart=always`. SQLite lives on the instance disk so feed history
-  survives restarts.
-- **Caddy** terminates TLS and reverse-proxies the host to the app:
+Deploys are CI-driven — push to `main` and
+[`.github/workflows/deploy-coolify.yml`](.github/workflows/deploy-coolify.yml):
 
-  ```caddy
-  feeds.coseeker.com {
-      reverse_proxy 127.0.0.1:3000
-  }
-  ```
+1. builds the image (see [`Dockerfile`](Dockerfile)) and pushes it to GHCR as
+   `ghcr.io/k4m2a/feed-generator:latest` (plus a short-SHA tag for rollbacks),
+2. calls the Coolify deploy API to roll out the new image, and
+3. polls `https://feeds.coseeker.com/.well-known/did.json` until the new container serves.
 
-- **DNS**: `feeds.coseeker.com` A-record → the instance's static IP.
-- **Firewall**: ports 80 and 443 open to the internet (Caddy uses them for ACME + serving).
-- A swap file is recommended on small (≤512 MB RAM) instances so `yarn install` / `tsc`
-  don't OOM.
+The Coolify service stack is defined by [`coolify-compose.yml`](coolify-compose.yml) (the
+source-of-truth to paste into the resource's *Edit Compose File* screen). Two things differ
+from the old Lightsail setup: the app binds `0.0.0.0` (Traefik proxies it over the docker
+network), and `feed.sqlite` lives on a **named volume** (`feedgen-data`) so feed history
+survives redeploys.
 
 This must serve `https://feeds.coseeker.com/.well-known/did.json` (the `did:web` document)
 plus the `app.bsky.feed.getFeedSkeleton` and `describeFeedGenerator` XRPC endpoints.
 
-Handy ops commands on the host:
+### One-time setup
+
+Required GitHub Actions config (Settings → Secrets and variables → Actions):
+
+| Kind | Name | Value |
+|---|---|---|
+| Variable | `COOLIFY_URL` | Coolify base URL, e.g. `https://coolify.k4m2a.app` |
+| Variable | `COOLIFY_RESOURCE_UUID` | UUID of the feed-generator resource (from its Coolify URL) |
+| Variable | `COOLIFY_HEALTHCHECK_URL` | `https://feeds.coseeker.com/.well-known/did.json` (optional; this is the default) |
+| Secret | `COOLIFY_TOKEN` | Coolify API token (Keys & Tokens → API tokens) |
+
+DNS: point the `feeds.coseeker.com` A-record at the k4m2a-core box.
+
+### Ops
+
+The container name is prefixed by Coolify; find it and tail logs / run scripts with:
 
 ```bash
-sudo journalctl -u feedgen -f      # app logs
-sudo systemctl restart feedgen     # restart after a deploy (git pull && yarn build first)
+docker ps --filter name=feed-generator            # find the container id
+docker logs -f <container>                         # app logs
+docker exec -it <container> yarn backfill          # (re)backfill feed history
 ```
 
 ## Publishing the feeds

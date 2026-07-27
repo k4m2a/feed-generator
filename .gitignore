@@ -143,3 +143,7 @@ go/go
 
 # SSH keys (e.g. Lightsail default key)
 *.pem
+.coolify-token
+
+# macOS Finder metadata
+.DS_Store

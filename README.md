@@ -95,9 +95,8 @@ Deploys are CI-driven — push to `main` and
 2. calls the Coolify deploy API to roll out the new image, and
 3. polls `https://feeds.coseeker.com/.well-known/did.json` until the new container serves.
 
-The resource is a Coolify **Docker-image Application** (`kj0jt03zbp8bwhi0qf2pcsuc`, project
-*K4M2A* → *production*), so its env vars and volume are configured **in the Coolify UI**, not
-from a compose file in this repo. [`coolify-compose.yml`](coolify-compose.yml) is the
+The resource is a Coolify **Docker-image Application**, not a Compose service, so its env vars
+and volume are configured **in the Coolify UI**, not from a compose file in this repo. [`coolify-compose.yml`](coolify-compose.yml) is the
 checked-in *record* of those values — edit one and you must edit the other.
 
 Two things differ from the old Lightsail setup: the app binds `0.0.0.0` (Traefik proxies it
@@ -113,8 +112,8 @@ Required GitHub Actions config (Settings → Secrets and variables → Actions):
 
 | Kind | Name | Value |
 |---|---|---|
-| Variable | `COOLIFY_URL` | `https://coolify.achal.xyz` |
-| Variable | `COOLIFY_RESOURCE_UUID` | `kj0jt03zbp8bwhi0qf2pcsuc` (from the resource's Coolify URL) |
+| Variable | `COOLIFY_URL` | base URL of your Coolify instance |
+| Variable | `COOLIFY_RESOURCE_UUID` | UUID of the feed-generator resource (from its Coolify URL) |
 | Variable | `COOLIFY_HEALTHCHECK_URL` | `https://feeds.coseeker.com/.well-known/did.json` (optional; this is the default) |
 | Secret | `COOLIFY_TOKEN` | Coolify API token (Keys & Tokens → API tokens) |
 

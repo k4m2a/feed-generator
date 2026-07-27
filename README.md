@@ -1,8 +1,8 @@
 # CoSeeker Feed Generator
 
-An [AT Protocol](https://atproto.com) feed generator that serves three Bluesky custom
+An [AT Protocol](https://atproto.com) feed generator that serves four Bluesky custom
 feeds, each surfacing posts from the members of a Bluesky list owned by
-[`publisher.coseeker.org`](https://bsky.app/profile/publisher.coseeker.org)
+[`coseeker.com`](https://bsky.app/profile/coseeker.com)
 (`did:plc:ieyfjh6ystyufa3a7pi3jw5q`).
 
 | Feed (rkey) | Display name | Source list |
@@ -10,6 +10,7 @@ feeds, each surfacing posts from the members of a Bluesky list owned by
 | `md-parivaar` | MD Parivaar | `app.bsky.graph.list/3moflnppcac2d` |
 | `k4m2a` | K4M2A | `app.bsky.graph.list/3mofllwjqdk2d` |
 | `coseeker` | CoSeeker | `app.bsky.graph.list/3moflmrivgk2d` |
+| `gi4qc` | GI4QC | `app.bsky.graph.list/3mrm42b52y22q` |
 
 Each feed is the equivalent of a Skyfeed "list input → sort by created_at" block: a post is
 included iff its author is on the list, newest first.
@@ -48,7 +49,7 @@ All config is via environment variables (`.env`, gitignored — see `.env.exampl
 |---|---|
 | `FEEDGEN_HOSTNAME` | `feeds.coseeker.com` |
 | `FEEDGEN_SERVICE_DID` | `did:web:feeds.coseeker.com` |
-| `FEEDGEN_PUBLISHER_DID` | `did:plc:ieyfjh6ystyufa3a7pi3jw5q` (publisher.coseeker.org) |
+| `FEEDGEN_PUBLISHER_DID` | `did:plc:ieyfjh6ystyufa3a7pi3jw5q` (coseeker.com) |
 | `FEEDGEN_SQLITE_LOCATION` | a persistent path, e.g. `feed.sqlite` (not `:memory:`) |
 | `FEEDGEN_SUBSCRIPTION_ENDPOINT` | `wss://jetstream2.us-east.bsky.network/subscribe` |
 | `FEEDGEN_LISTENHOST` | `127.0.0.1` (behind a reverse proxy) |
@@ -56,7 +57,7 @@ All config is via environment variables (`.env`, gitignored — see `.env.exampl
 | `FEEDGEN_SUBSCRIPTION_RECONNECT_DELAY` | `3000` (ms) |
 
 The **service host** (`feeds.coseeker.com`) is independent of the **publishing account**
-(`publisher.coseeker.org`). The service DID is a `did:web` derived from the hostname.
+(`coseeker.com`). The service DID is a `did:web` derived from the hostname.
 
 ## Running locally
 
@@ -127,7 +128,7 @@ docker exec -it <container> yarn backfill          # (re)backfill feed history
 
 ## Publishing the feeds
 
-Feed records are published to the **publisher.coseeker.org** repo — this is what makes the
+Feed records are published to the **coseeker.com** repo — this is what makes the
 feeds discoverable and points them at the service DID. Use a Bluesky **App Password** (not
 the main password).
 
@@ -141,7 +142,7 @@ yarn publishAll
 
 It reads display names and descriptions from
 [`src/algos/list-feed.ts`](src/algos/list-feed.ts), so editing a feed there and re-running
-updates the live record. Login defaults to `publisher.coseeker.org` on
+updates the live record. Login defaults to `coseeker.com` on
 `https://coseeker.org`; override with `PUBLISH_HANDLE`, `PUBLISH_SERVICE`, or skip the
 prompt with `BLUESKY_APP_PASSWORD`.
 
@@ -149,7 +150,7 @@ prompt with `BLUESKY_APP_PASSWORD`.
 
 Drop a square **PNG or JPEG** (≈1000×1000, under ~1 MB) into [`avatars/`](avatars/) named
 after the feed's rkey — `avatars/md-parivaar.png`, `avatars/k4m2a.png`,
-`avatars/coseeker.png` — and `yarn publishAll` uploads it automatically. If no file is
+`avatars/coseeker.png`, `avatars/gi4qc.jpg` — and `yarn publishAll` uploads it automatically. If no file is
 present, the existing avatar on the record is preserved.
 
 ### Single feed (interactive)

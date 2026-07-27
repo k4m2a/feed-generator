@@ -30,7 +30,7 @@ const run = async () => {
     )
   }
 
-  const handle = process.env.PUBLISH_HANDLE || 'publisher.coseeker.org'
+  const handle = process.env.PUBLISH_HANDLE || 'coseeker.com'
   const service = process.env.PUBLISH_SERVICE || 'https://coseeker.org'
 
   let password = process.env.BLUESKY_APP_PASSWORD

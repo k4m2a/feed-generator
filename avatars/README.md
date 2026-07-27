@@ -8,6 +8,7 @@ uploads it automatically:
 | `md-parivaar.png` (or `.jpg`) | MD Parivaar |
 | `k4m2a.png` | K4M2A |
 | `coseeker.png` | CoSeeker |
+| `gi4qc.jpg` | GI4QC |
 
 **Format:** PNG or JPEG, square (e.g. 1000×1000). Keep it under ~1 MB.
 

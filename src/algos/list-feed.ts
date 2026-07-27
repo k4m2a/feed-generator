@@ -28,6 +28,13 @@ export const FEEDS: Record<string, FeedDef> = {
     displayName: 'CoSeeker',
     description: 'Posts from members of the CoSeeker list.',
   },
+  gi4qc: {
+    listUri:
+      'at://did:plc:ieyfjh6ystyufa3a7pi3jw5q/app.bsky.graph.list/3mrm42b52y22q',
+    displayName: 'GI4QC',
+    description:
+      'Power of Mind Over Matter?\nInspired by ancient scriptures & experiments at Princeton Univ.',
+  },
 }
 
 // All distinct list URIs the generator needs to track membership for.

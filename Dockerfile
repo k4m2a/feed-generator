@@ -18,13 +18,20 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 # Carry over the already-compiled node_modules (incl. the native better-sqlite3
-# binary and ts-node, so `yarn backfill` / `yarn publishAll` still work via
-# `docker exec`) plus the compiled JS.
+# binary and ts-node, so `yarn backfill` still works from the container shell)
+# plus the compiled JS.
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY package.json yarn.lock ./
 COPY scripts ./scripts
 COPY src ./src
+
+# tsconfig is required at RUNTIME, not just at build time: `scripts/` is never
+# compiled into dist/ (tsconfig `include` is src-only), so `yarn backfill` runs
+# it through ts-node. Without this file ts-node falls back to its default
+# `module: ESNext`, node hands the .ts to the ESM loader, and it dies with
+# `ERR_UNKNOWN_FILE_EXTENSION`. The repo tsconfig pins `module: CommonJS`.
+COPY tsconfig.json ./
 
 EXPOSE 3000
 

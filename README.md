@@ -38,8 +38,9 @@ included iff its author is on the list, newest first.
    [`src/algos/index.ts`](src/algos/index.ts) and auto-advertised by
    `app.bsky.feed.describeFeedGenerator`.
 
-To add or change feeds, edit the `FEEDS` table in
-[`src/algos/list-feed.ts`](src/algos/list-feed.ts) (rkey → list URI + display info).
+Every feed is one entry in the `FEEDS` table in
+[`src/algos/list-feed.ts`](src/algos/list-feed.ts) (rkey → list URI + display info) — see
+[Adding a new feed](#adding-a-new-feed).
 
 ## Configuration
 
@@ -94,11 +95,14 @@ Deploys are CI-driven — push to `main` and
 2. calls the Coolify deploy API to roll out the new image, and
 3. polls `https://feeds.coseeker.com/.well-known/did.json` until the new container serves.
 
-The Coolify service stack is defined by [`coolify-compose.yml`](coolify-compose.yml) (the
-source-of-truth to paste into the resource's *Edit Compose File* screen). Two things differ
-from the old Lightsail setup: the app binds `0.0.0.0` (Traefik proxies it over the docker
-network), and `feed.sqlite` lives on a **named volume** (`feedgen-data`) so feed history
-survives redeploys.
+The resource is a Coolify **Docker-image Application** (`kj0jt03zbp8bwhi0qf2pcsuc`, project
+*K4M2A* → *production*), so its env vars and volume are configured **in the Coolify UI**, not
+from a compose file in this repo. [`coolify-compose.yml`](coolify-compose.yml) is the
+checked-in *record* of those values — edit one and you must edit the other.
+
+Two things differ from the old Lightsail setup: the app binds `0.0.0.0` (Traefik proxies it
+over the docker network), and `feed.sqlite` lives on a **named volume** (`feedgen-data`
+→ `/data`) so feed history survives redeploys.
 
 This must serve `https://feeds.coseeker.com/.well-known/did.json` (the `did:web` document)
 plus the `app.bsky.feed.getFeedSkeleton` and `describeFeedGenerator` XRPC endpoints.
@@ -109,8 +113,8 @@ Required GitHub Actions config (Settings → Secrets and variables → Actions):
 
 | Kind | Name | Value |
 |---|---|---|
-| Variable | `COOLIFY_URL` | Coolify base URL, e.g. `https://coolify.k4m2a.app` |
-| Variable | `COOLIFY_RESOURCE_UUID` | UUID of the feed-generator resource (from its Coolify URL) |
+| Variable | `COOLIFY_URL` | `https://coolify.achal.xyz` |
+| Variable | `COOLIFY_RESOURCE_UUID` | `kj0jt03zbp8bwhi0qf2pcsuc` (from the resource's Coolify URL) |
 | Variable | `COOLIFY_HEALTHCHECK_URL` | `https://feeds.coseeker.com/.well-known/did.json` (optional; this is the default) |
 | Secret | `COOLIFY_TOKEN` | Coolify API token (Keys & Tokens → API tokens) |
 
@@ -118,7 +122,28 @@ DNS: point the `feeds.coseeker.com` A-record at the k4m2a-core box.
 
 ### Ops
 
-The container name is prefixed by Coolify; find it and tail logs / run scripts with:
+Everything day-to-day is done from the **Coolify UI** — no SSH needed. Open the
+feed-generator resource (project *K4M2A* → *production*):
+
+- **Logs** tab — app logs.
+- **Terminal** tab — pick the `feed-generator` container (the box also runs the PDS and
+  social-app), *Connect*, and you get a root shell **inside** the container at `/app`. Run
+  container commands directly there, with no `docker exec` wrapper:
+
+  ```bash
+  yarn backfill      # (re)backfill feed history for every tracked list
+  ```
+
+  The container's env (including `FEEDGEN_SQLITE_LOCATION=/data/feed.sqlite`) is inherited by
+  the shell, so the backfill writes to the same DB on the `feedgen-data` volume that the live
+  service reads.
+- **Redeploy** / **Restart** buttons — a redeploy re-pulls `ghcr.io/k4m2a/feed-generator:latest`.
+
+> Don't run `yarn publishAll` from the container: `avatars/` is excluded by
+> [`.dockerignore`](.dockerignore), so it would find no image and leave the published avatar
+> as-is. Publish from a checkout on your machine instead.
+
+If you do end up on the k4m2a-core box over SSH, the container name is Coolify-prefixed:
 
 ```bash
 docker ps --filter name=feed-generator            # find the container id
@@ -162,6 +187,67 @@ yarn publishFeed     # prompts for handle, password, recordName, displayName, ..
 ```
 
 To remove a feed record, use `yarn unpublishFeed`.
+
+## Adding a new feed
+
+Someone creates a Bluesky list on `coseeker.com`; you turn it into a feed. `FEEDS` in
+[`src/algos/list-feed.ts`](src/algos/list-feed.ts) is the only code change — handlers and
+`describeFeedGenerator` are both derived from it.
+
+**1. Look up the list.** Its `uri`, `name`, `description`, and `avatar` all come from the
+public AppView (no auth):
+
+```bash
+curl -s "https://public.api.bsky.app/xrpc/app.bsky.graph.getLists?actor=did:plc:ieyfjh6ystyufa3a7pi3jw5q&limit=50" | jq '.lists[] | {uri, name, description, avatar}'
+```
+
+**2. Add it to `FEEDS`.** Pick a short lowercase `rkey` — it becomes the feed's URL — and use
+the list's own name/description unless there's a reason not to:
+
+```ts
+gi4qc: {
+  listUri: 'at://did:plc:ieyfjh6ystyufa3a7pi3jw5q/app.bsky.graph.list/3mrm42b52y22q',
+  displayName: 'GI4QC',
+  description: 'Power of Mind Over Matter?\n…',
+},
+```
+
+**3. Add the avatar.** To reuse the list's own logo, pull the original blob from the PDS (the
+CID is the last path segment of the `avatar` URL from step 1) and save it as
+`avatars/<rkey>.{png,jpg}` — check the `content-type` to pick the extension:
+
+```bash
+curl -s -D- -o avatars/<rkey>.jpg "https://coseeker.org/xrpc/com.atproto.sync.getBlob?did=did:plc:ieyfjh6ystyufa3a7pi3jw5q&cid=<cid>"
+```
+
+**4. Commit and push** — CI builds the image and rolls out the deploy (~1 min). Do this
+*before* step 5: the feed record points at `did:web:feeds.coseeker.com`, so if the record
+exists before the service knows the rkey, anyone opening the feed gets `UnknownFeed` until
+the deploy lands.
+
+**5. Publish the record** from your machine (needs the app password, and `avatars/` isn't in
+the image):
+
+```bash
+yarn publishAll
+```
+
+**6. Backfill.** Live indexing only captures posts made *after* the service saw them, so a new
+feed starts nearly empty. In the Coolify **Terminal** tab (see [Ops](#ops)):
+
+```bash
+yarn backfill
+```
+
+**7. Verify:**
+
+```bash
+curl -s "https://feeds.coseeker.com/xrpc/app.bsky.feed.getFeedSkeleton?feed=at://did:plc:ieyfjh6ystyufa3a7pi3jw5q/app.bsky.feed.generator/<rkey>&limit=5" | jq
+curl -s "https://public.api.bsky.app/xrpc/app.bsky.feed.getFeedGenerator?feed=at://did:plc:ieyfjh6ystyufa3a7pi3jw5q/app.bsky.feed.generator/<rkey>" | jq '{isOnline: .isOnline, isValid: .isValid}'
+```
+
+Finally, add a row to the feed table at the top of this README and to
+[`avatars/README.md`](avatars/README.md).
 
 ## License
 

@@ -1,10 +1,14 @@
-# Coolify "Docker Compose" service stack for the feed-generator.
+# Reference config for the feed-generator on the k4m2a-core (Coolify) box.
 #
-# This is the source-of-truth for what runs on the k4m2a-core (Coolify) box.
-# Paste it into the Coolify resource's "Edit Compose File" screen (the same
-# place social-app's compose lives). CI never touches this file directly —
-# GitHub Actions builds & pushes the image, then calls the Coolify deploy API,
-# and Coolify pulls `:latest` per this compose.
+# NOT read by anything at deploy time. As built (migration completed
+# 2026-07-24) the feed-generator is a Coolify **Docker-image Application**
+# (resource `kj0jt03zbp8bwhi0qf2pcsuc`), not a Compose service — the env vars
+# and the `/data` volume below are configured in the Coolify UI, and this file
+# is the checked-in record of what those values should be. Change a value here
+# and you must also change it in Coolify (or vice versa).
+#
+# CI never touches this file: GitHub Actions builds & pushes the image, then
+# calls the Coolify deploy API, and Coolify pulls `:latest`.
 #
 # Two things differ from the old AWS Lightsail / systemd + Caddy setup:
 #   1. FEEDGEN_LISTENHOST is 0.0.0.0 (Coolify's Traefik proxies over the docker

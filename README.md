@@ -114,10 +114,21 @@ Required GitHub Actions config (Settings → Secrets and variables → Actions):
 |---|---|---|
 | Variable | `COOLIFY_URL` | base URL of your Coolify instance |
 | Variable | `COOLIFY_RESOURCE_UUID` | UUID of the feed-generator resource (from its Coolify URL) |
-| Variable | `COOLIFY_HEALTHCHECK_URL` | `https://feeds.coseeker.app/.well-known/did.json` (optional; this is the default) |
+| Variable | `COOLIFY_HEALTHCHECK_URL` | `https://feeds.coseeker.app/.well-known/did.json` — **is set on this repo**, and overrides the workflow default |
 | Secret | `COOLIFY_TOKEN` | Coolify API token (Keys & Tokens → API tokens) |
 
 DNS: point the `feeds.coseeker.app` A-record at the k4m2a-core box.
+
+> **When the hostname changes, the repo variable must change too.** `COOLIFY_HEALTHCHECK_URL`
+> is set here, so editing the `${HEALTHCHECK_URL:-…}` fallback in the workflow file is **not**
+> enough — the variable wins and the post-deploy healthcheck polls the old host until it times
+> out, failing the run even though the build, push and deploy all succeeded. This bit us during
+> the Aug 2026 `coseeker.com` → `coseeker.app` cutover:
+>
+> ```bash
+> gh variable set COOLIFY_HEALTHCHECK_URL -R k4m2a/feed-generator \
+>   --body "https://feeds.coseeker.app/.well-known/did.json"
+> ```
 
 ### Ops
 
@@ -166,9 +177,13 @@ yarn publishAll
 
 It reads display names and descriptions from
 [`src/algos/list-feed.ts`](src/algos/list-feed.ts), so editing a feed there and re-running
-updates the live record. Login defaults to `coseeker.app` on
+updates the live record. Login defaults to **`FEEDGEN_PUBLISHER_DID`** on
 `https://coseeker.org`; override with `PUBLISH_HANDLE`, `PUBLISH_SERVICE`, or skip the
 prompt with `BLUESKY_APP_PASSWORD`.
+
+> It logs in by **DID rather than handle** on purpose. `createSession` accepts either, and a
+> DID cannot be invalidated by losing a domain — which is exactly what happened to the old
+> `coseeker.com` handle. Don't change the default back to a handle.
 
 ### Avatars
 

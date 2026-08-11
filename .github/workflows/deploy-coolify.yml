@@ -95,7 +95,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          url="${HEALTHCHECK_URL:-https://feeds.coseeker.com/.well-known/did.json}"
+          url="${HEALTHCHECK_URL:-https://feeds.coseeker.app/.well-known/did.json}"
 
           # Give the recreate a moment to begin so we do not observe the old
           # container still up and exit before the swap has even started.

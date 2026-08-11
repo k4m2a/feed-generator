@@ -2,7 +2,7 @@
 
 An [AT Protocol](https://atproto.com) feed generator that serves four Bluesky custom
 feeds, each surfacing posts from the members of a Bluesky list owned by
-[`coseeker.com`](https://bsky.app/profile/coseeker.com)
+[`coseeker.app`](https://bsky.app/profile/coseeker.app)
 (`did:plc:ieyfjh6ystyufa3a7pi3jw5q`).
 
 | Feed (rkey) | Display name | Source list |
@@ -48,17 +48,17 @@ All config is via environment variables (`.env`, gitignored — see `.env.exampl
 
 | Variable | Value used in production |
 |---|---|
-| `FEEDGEN_HOSTNAME` | `feeds.coseeker.com` |
-| `FEEDGEN_SERVICE_DID` | `did:web:feeds.coseeker.com` |
-| `FEEDGEN_PUBLISHER_DID` | `did:plc:ieyfjh6ystyufa3a7pi3jw5q` (coseeker.com) |
+| `FEEDGEN_HOSTNAME` | `feeds.coseeker.app` |
+| `FEEDGEN_SERVICE_DID` | `did:web:feeds.coseeker.app` |
+| `FEEDGEN_PUBLISHER_DID` | `did:plc:ieyfjh6ystyufa3a7pi3jw5q` (coseeker.app) |
 | `FEEDGEN_SQLITE_LOCATION` | a persistent path, e.g. `feed.sqlite` (not `:memory:`) |
 | `FEEDGEN_SUBSCRIPTION_ENDPOINT` | `wss://jetstream2.us-east.bsky.network/subscribe` |
 | `FEEDGEN_LISTENHOST` | `127.0.0.1` (behind a reverse proxy) |
 | `FEEDGEN_PORT` | `3000` |
 | `FEEDGEN_SUBSCRIPTION_RECONNECT_DELAY` | `3000` (ms) |
 
-The **service host** (`feeds.coseeker.com`) is independent of the **publishing account**
-(`coseeker.com`). The service DID is a `did:web` derived from the hostname.
+The **service host** (`feeds.coseeker.app`) is independent of the **publishing account**
+(`coseeker.app`). The service DID is a `did:web` derived from the hostname.
 
 ## Running locally
 
@@ -85,7 +85,7 @@ curl -s "http://127.0.0.1:3000/xrpc/app.bsky.feed.getFeedSkeleton?feed=at://did:
 
 The service runs as a Docker container on the shared **k4m2a-core** box, managed by
 [Coolify](https://coolify.io) alongside the PDS and social-app. Coolify's Traefik proxy
-terminates TLS for `feeds.coseeker.com`; there is no per-host Caddy anymore.
+terminates TLS for `feeds.coseeker.app`; there is no per-host Caddy anymore.
 
 Deploys are CI-driven — push to `main` and
 [`.github/workflows/deploy-coolify.yml`](.github/workflows/deploy-coolify.yml):
@@ -93,7 +93,7 @@ Deploys are CI-driven — push to `main` and
 1. builds the image (see [`Dockerfile`](Dockerfile)) and pushes it to GHCR as
    `ghcr.io/k4m2a/feed-generator:latest` (plus a short-SHA tag for rollbacks),
 2. calls the Coolify deploy API to roll out the new image, and
-3. polls `https://feeds.coseeker.com/.well-known/did.json` until the new container serves.
+3. polls `https://feeds.coseeker.app/.well-known/did.json` until the new container serves.
 
 The resource is a Coolify **Docker-image Application**, not a Compose service, so its env vars
 and volume are configured **in the Coolify UI**, not from a compose file in this repo. [`coolify-compose.yml`](coolify-compose.yml) is the
@@ -103,7 +103,7 @@ Two things differ from the old Lightsail setup: the app binds `0.0.0.0` (Traefik
 over the docker network), and `feed.sqlite` lives on a **named volume** (`feedgen-data`
 → `/data`) so feed history survives redeploys.
 
-This must serve `https://feeds.coseeker.com/.well-known/did.json` (the `did:web` document)
+This must serve `https://feeds.coseeker.app/.well-known/did.json` (the `did:web` document)
 plus the `app.bsky.feed.getFeedSkeleton` and `describeFeedGenerator` XRPC endpoints.
 
 ### One-time setup
@@ -114,10 +114,10 @@ Required GitHub Actions config (Settings → Secrets and variables → Actions):
 |---|---|---|
 | Variable | `COOLIFY_URL` | base URL of your Coolify instance |
 | Variable | `COOLIFY_RESOURCE_UUID` | UUID of the feed-generator resource (from its Coolify URL) |
-| Variable | `COOLIFY_HEALTHCHECK_URL` | `https://feeds.coseeker.com/.well-known/did.json` (optional; this is the default) |
+| Variable | `COOLIFY_HEALTHCHECK_URL` | `https://feeds.coseeker.app/.well-known/did.json` (optional; this is the default) |
 | Secret | `COOLIFY_TOKEN` | Coolify API token (Keys & Tokens → API tokens) |
 
-DNS: point the `feeds.coseeker.com` A-record at the k4m2a-core box.
+DNS: point the `feeds.coseeker.app` A-record at the k4m2a-core box.
 
 ### Ops
 
@@ -152,7 +152,7 @@ docker exec -it <container> yarn backfill          # (re)backfill feed history
 
 ## Publishing the feeds
 
-Feed records are published to the **coseeker.com** repo — this is what makes the
+Feed records are published to the **coseeker.app** repo — this is what makes the
 feeds discoverable and points them at the service DID. Use a Bluesky **App Password** (not
 the main password).
 
@@ -166,7 +166,7 @@ yarn publishAll
 
 It reads display names and descriptions from
 [`src/algos/list-feed.ts`](src/algos/list-feed.ts), so editing a feed there and re-running
-updates the live record. Login defaults to `coseeker.com` on
+updates the live record. Login defaults to `coseeker.app` on
 `https://coseeker.org`; override with `PUBLISH_HANDLE`, `PUBLISH_SERVICE`, or skip the
 prompt with `BLUESKY_APP_PASSWORD`.
 
@@ -189,7 +189,7 @@ To remove a feed record, use `yarn unpublishFeed`.
 
 ## Adding a new feed
 
-Someone creates a Bluesky list on `coseeker.com`; you turn it into a feed. `FEEDS` in
+Someone creates a Bluesky list on `coseeker.app`; you turn it into a feed. `FEEDS` in
 [`src/algos/list-feed.ts`](src/algos/list-feed.ts) is the only code change — handlers and
 `describeFeedGenerator` are both derived from it.
 
@@ -220,7 +220,7 @@ curl -s -D- -o avatars/<rkey>.jpg "https://coseeker.org/xrpc/com.atproto.sync.ge
 ```
 
 **4. Commit and push** — CI builds the image and rolls out the deploy (~1 min). Do this
-*before* step 5: the feed record points at `did:web:feeds.coseeker.com`, so if the record
+*before* step 5: the feed record points at `did:web:feeds.coseeker.app`, so if the record
 exists before the service knows the rkey, anyone opening the feed gets `UnknownFeed` until
 the deploy lands.
 
@@ -241,7 +241,7 @@ yarn backfill
 **7. Verify:**
 
 ```bash
-curl -s "https://feeds.coseeker.com/xrpc/app.bsky.feed.getFeedSkeleton?feed=at://did:plc:ieyfjh6ystyufa3a7pi3jw5q/app.bsky.feed.generator/<rkey>&limit=5" | jq
+curl -s "https://feeds.coseeker.app/xrpc/app.bsky.feed.getFeedSkeleton?feed=at://did:plc:ieyfjh6ystyufa3a7pi3jw5q/app.bsky.feed.generator/<rkey>&limit=5" | jq
 curl -s "https://public.api.bsky.app/xrpc/app.bsky.feed.getFeedGenerator?feed=at://did:plc:ieyfjh6ystyufa3a7pi3jw5q/app.bsky.feed.generator/<rkey>" | jq '{isOnline: .isOnline, isValid: .isValid}'
 ```
 

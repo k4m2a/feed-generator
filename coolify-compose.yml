@@ -18,7 +18,7 @@
 #      would be wiped.
 #
 # SERVICE_FQDN_* is Coolify's magic var: it makes Coolify generate the Traefik
-# labels + TLS cert for feeds.coseeker.com and inject the domain. (You can
+# labels + TLS cert for feeds.coseeker.app and inject the domain. (You can
 # instead set the domain in the Coolify UI, exactly like you did for social-app.)
 
 services:
@@ -26,10 +26,10 @@ services:
     image: ghcr.io/k4m2a/feed-generator:latest
     restart: unless-stopped
     environment:
-      - SERVICE_FQDN_FEEDGENERATOR_3000=https://feeds.coseeker.com
+      - SERVICE_FQDN_FEEDGENERATOR_3000=https://feeds.coseeker.app
 
-      - FEEDGEN_HOSTNAME=feeds.coseeker.com
-      - FEEDGEN_SERVICE_DID=did:web:feeds.coseeker.com
+      - FEEDGEN_HOSTNAME=feeds.coseeker.app
+      - FEEDGEN_SERVICE_DID=did:web:feeds.coseeker.app
       - FEEDGEN_PUBLISHER_DID=did:plc:ieyfjh6ystyufa3a7pi3jw5q
 
       # Persistent sqlite on the named volume below — NOT the container fs.

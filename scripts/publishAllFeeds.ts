@@ -30,7 +30,13 @@ const run = async () => {
     )
   }
 
-  const handle = process.env.PUBLISH_HANDLE || 'coseeker.com'
+  // Default to the publisher DID rather than a handle: createSession accepts
+  // either, and a DID can never be broken by losing a domain (as happened when
+  // the `coseeker.com` handle went away with the domain).
+  const handle =
+    process.env.PUBLISH_HANDLE ||
+    process.env.FEEDGEN_PUBLISHER_DID ||
+    'coseeker.app'
   const service = process.env.PUBLISH_SERVICE || 'https://coseeker.org'
 
   let password = process.env.BLUESKY_APP_PASSWORD

@@ -67,7 +67,11 @@ jobs:
         run: |
           set -euo pipefail
 
-          response=$(curl -sS --fail-with-body -X GET \
+          # POST, not GET: Coolify v4.5.3 changed this endpoint and answers a
+          # GET with 405 {"message":"This endpoint has changed to a POST
+          # request."}. The build and push still succeed when that happens, so
+          # the symptom is a red deploy step on a green image.
+          response=$(curl -sS --fail-with-body -X POST \
             -H "Authorization: Bearer $COOLIFY_TOKEN" \
             "$COOLIFY_URL/api/v1/deploy?uuid=$COOLIFY_UUID&force=false")
 

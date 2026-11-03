@@ -24,4 +24,10 @@ export type Config = {
   appview: string
   // Cap on posts auto-backfilled per newly added member (0 = unlimited).
   backfillMaxPerAuthor: number
+  // How often (ms) to ping the jetstream socket and check it for silence.
+  jetstreamHeartbeatInterval: number
+  // Reconnect jetstream if nothing arrives within this window (ms).
+  jetstreamStallTimeout: number
+  // How often (ms) to log a jetstream liveness summary (0 disables).
+  jetstreamLivenessInterval: number
 }

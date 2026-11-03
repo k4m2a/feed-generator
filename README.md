@@ -32,6 +32,14 @@ included iff its author is on the list, newest first.
    with their author DID; deletes are removed.
    When list membership changes, the subscription reconnects with the updated `wantedDids`
    (resuming from the stored `time_us` cursor).
+
+   The socket is **watchdogged**: it is pinged every
+   `FEEDGEN_JETSTREAM_HEARTBEAT_INTERVAL` ms and dropped and reconnected if neither a message
+   nor a pong arrives within `FEEDGEN_JETSTREAM_STALL_TIMEOUT` ms. This exists because of a
+   real outage — see [Jetstream went silent](#jetstream-went-silent). Every
+   `FEEDGEN_JETSTREAM_LIVENESS_INTERVAL` ms the service also logs a one-line
+   `jetstream alive — N events, M posts indexed, last traffic Ns ago` summary, so a quiet
+   subscription can be told apart from a dead one at a glance.
 3. **Serving** — each feed handler ([`src/algos/list-feed.ts`](src/algos/list-feed.ts))
    returns the stored posts whose author is a member of its list, newest first, with
    timestamp-based cursor pagination. Feeds are registered in
@@ -56,6 +64,9 @@ All config is via environment variables (`.env`, gitignored — see `.env.exampl
 | `FEEDGEN_LISTENHOST` | `127.0.0.1` (behind a reverse proxy) |
 | `FEEDGEN_PORT` | `3000` |
 | `FEEDGEN_SUBSCRIPTION_RECONNECT_DELAY` | `3000` (ms) |
+| `FEEDGEN_JETSTREAM_HEARTBEAT_INTERVAL` | `30000` (ms) — watchdog ping interval |
+| `FEEDGEN_JETSTREAM_STALL_TIMEOUT` | `90000` (ms) — reconnect after this much silence |
+| `FEEDGEN_JETSTREAM_LIVENESS_INTERVAL` | `900000` (ms) — liveness log interval, `0` disables |
 
 The **service host** (`feeds.coseeker.app`) is independent of the **publishing account**
 (`coseeker.app`). The service DID is a `did:web` derived from the hostname.
@@ -160,6 +171,31 @@ docker ps --filter name=feed-generator            # find the container id
 docker logs -f <container>                         # app logs
 docker exec -it <container> yarn backfill          # (re)backfill feed history
 ```
+
+### Jetstream went silent
+
+**Symptom:** posts show up on members' profiles but stop appearing in the feeds, while
+`feeds.coseeker.app` keeps serving `did.json` and the container shows a long uptime with no
+crash.
+
+This happened on **2026-09-30**: the jetstream TCP connection went half-open and `ws` fired
+neither `close` nor `error`, so the reconnect path never ran. The process stayed healthy, the
+list refresher kept logging every 5 minutes, and ingestion was dead for 34 days. The Coolify
+healthcheck polls `did.json`, which never went red, so nothing alerted.
+
+The heartbeat/stall watchdog above is the fix. If you suspect it again:
+
+```bash
+# last jetstream activity — if the newest line is hours old, ingestion is stalled
+sudo docker logs --timestamps <container> 2>&1 | grep -i jetstream | tail
+```
+
+A healthy service logs `jetstream alive — …` every 15 minutes even when no one is posting.
+
+**Recovering the gap.** Restarting only resumes live ingest; it does not recover missed
+posts, because the stored cursor will be far outside jetstream's replay window. Run
+`yarn backfill` (see [Ops](#ops)) afterwards — it is idempotent, and it inserts with
+`indexedAt` = the post's `createdAt`, so recovered posts interleave in the right order.
 
 ## Publishing the feeds
 

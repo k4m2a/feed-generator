@@ -22,6 +22,12 @@ const run = async () => {
       maybeStr(process.env.FEEDGEN_APPVIEW) ?? 'https://public.api.bsky.app',
     backfillMaxPerAuthor:
       maybeInt(process.env.FEEDGEN_BACKFILL_MAX_PER_AUTHOR) ?? 1000,
+    jetstreamHeartbeatInterval:
+      maybeInt(process.env.FEEDGEN_JETSTREAM_HEARTBEAT_INTERVAL) ?? 30000,
+    jetstreamStallTimeout:
+      maybeInt(process.env.FEEDGEN_JETSTREAM_STALL_TIMEOUT) ?? 90000,
+    jetstreamLivenessInterval:
+      maybeInt(process.env.FEEDGEN_JETSTREAM_LIVENESS_INTERVAL) ?? 900000,
     hostname,
     serviceDid,
   })

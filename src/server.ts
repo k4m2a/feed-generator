@@ -58,6 +58,11 @@ export class FeedGenerator {
       cfg.subscriptionEndpoint,
       lists,
       cfg.subscriptionReconnectDelay,
+      {
+        heartbeatInterval: cfg.jetstreamHeartbeatInterval,
+        stallTimeout: cfg.jetstreamStallTimeout,
+        livenessInterval: cfg.jetstreamLivenessInterval,
+      },
     )
 
     const didCache = new MemoryCache()

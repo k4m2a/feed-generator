@@ -18,20 +18,45 @@ type JetstreamEvent = {
 
 const POST_COLLECTION = 'app.bsky.feed.post'
 
+export type JetstreamOptions = {
+  // How often to ping the socket and check it for silence.
+  heartbeatInterval: number
+  // Reconnect if neither a message nor a pong arrives within this window.
+  stallTimeout: number
+  // How often to log a liveness summary (0 disables).
+  livenessInterval: number
+}
+
 // Consumes the Bluesky Jetstream, filtered server-side to post events from the
 // current set of list members (wantedDids), and indexes them. Reconnects with a
 // refreshed wantedDids set whenever list membership changes.
+//
+// The socket is watchdogged, because the failure that actually bit us was not a
+// dropped connection but a silent one: on 2026-09-30 the TCP connection went
+// half-open and `ws` never fired 'close' or 'error', so the reconnect path below
+// was never reached and ingestion stopped dead for 34 days while the process
+// stayed healthy and kept serving HTTP. A half-open socket answers neither
+// messages nor pings, so pinging on an interval and reconnecting when nothing
+// comes back is what makes that state detectable at all.
 export class JetstreamSubscription {
   private ws?: WebSocket
   private reconnectTimer?: NodeJS.Timeout
+  private heartbeatTimer?: NodeJS.Timeout
+  private livenessTimer?: NodeJS.Timeout
   private stopped = false
   private eventsSinceCursorWrite = 0
+  // Last time a message or pong arrived; the watchdog measures silence from here.
+  private lastActivityAt = 0
+  // Counters for the periodic liveness line, reset each time it's logged.
+  private eventsSinceReport = 0
+  private indexedSinceReport = 0
 
   constructor(
     private db: Database,
     private endpoint: string,
     private lists: ListManager,
     private reconnectDelay: number,
+    private opts: JetstreamOptions,
   ) {}
 
   start() {
@@ -39,20 +64,32 @@ export class JetstreamSubscription {
       console.log('list membership changed — reconnecting jetstream')
       this.reconnect()
     }
+    this.startLivenessReport()
     this.connect()
   }
 
   stop() {
     this.stopped = true
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
-    this.ws?.removeAllListeners()
-    this.ws?.close()
+    if (this.livenessTimer) clearInterval(this.livenessTimer)
+    this.stopHeartbeat()
+    this.discard(this.ws)
   }
 
   private reconnect() {
-    this.ws?.removeAllListeners()
-    this.ws?.close()
+    this.discard(this.ws)
     this.scheduleConnect(0)
+  }
+
+  // Drop a socket we're done with. terminate(), not close(): we never need the
+  // closing handshake with a firehose, and a half-open socket would never
+  // complete one — close() would hang and leak the socket instead of firing
+  // 'close'.
+  private discard(ws?: WebSocket) {
+    if (!ws) return
+    this.stopHeartbeat()
+    ws.removeAllListeners()
+    ws.terminate()
   }
 
   private scheduleConnect(delay: number) {
@@ -90,17 +127,31 @@ export class JetstreamSubscription {
 
     const url = await this.buildUrl()
     console.log(`connecting to jetstream (${wanted.length} wantedDids)`)
-    const ws = new WebSocket(url)
+    // handshakeTimeout so a connect that never completes fails loudly into the
+    // reconnect path rather than hanging the way the half-open socket did.
+    const ws = new WebSocket(url, { handshakeTimeout: 30000 })
     this.ws = ws
 
-    ws.on('open', () => console.log('jetstream connected'))
+    ws.on('open', () => {
+      console.log('jetstream connected')
+      this.lastActivityAt = Date.now()
+      this.startHeartbeat(ws)
+    })
     ws.on('message', (data: WebSocket.RawData) => {
+      this.lastActivityAt = Date.now()
+      this.eventsSinceReport++
       this.handleMessage(data.toString()).catch((err) =>
         console.error('jetstream message error', err),
       )
     })
+    // Jetstream answering our ping is proof the socket is still alive even when
+    // every tracked account happens to be quiet.
+    ws.on('pong', () => {
+      this.lastActivityAt = Date.now()
+    })
     ws.on('close', () => {
       if (this.stopped || this.ws !== ws) return
+      this.stopHeartbeat()
       console.warn('jetstream closed — reconnecting')
       this.scheduleConnect(this.reconnectDelay)
     })
@@ -108,6 +159,56 @@ export class JetstreamSubscription {
       console.error('jetstream socket error', err)
       ws.close() // triggers 'close' → reconnect
     })
+  }
+
+  private startHeartbeat(ws: WebSocket) {
+    this.stopHeartbeat()
+    this.heartbeatTimer = setInterval(() => {
+      if (this.stopped || this.ws !== ws) return
+      const idleMs = Date.now() - this.lastActivityAt
+      if (idleMs >= this.opts.stallTimeout) {
+        console.warn(
+          `jetstream stalled — nothing received for ${Math.round(
+            idleMs / 1000,
+          )}s; forcing reconnect`,
+        )
+        // Fires 'close' on the socket we're still tracking, so the usual
+        // reconnect path picks it up from there.
+        this.stopHeartbeat()
+        ws.terminate()
+        return
+      }
+      try {
+        ws.ping()
+      } catch (err) {
+        console.error('jetstream ping failed', err)
+        this.stopHeartbeat()
+        ws.terminate()
+      }
+    }, this.opts.heartbeatInterval)
+  }
+
+  private stopHeartbeat() {
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer)
+    this.heartbeatTimer = undefined
+  }
+
+  // A periodic "still ingesting" line. Quiet accounts mean no post ever gets
+  // logged, so without this there is no way to tell a working subscription from
+  // a silently dead one by reading the logs.
+  private startLivenessReport() {
+    if (this.opts.livenessInterval <= 0) return
+    this.livenessTimer = setInterval(() => {
+      const connected = this.ws?.readyState === WebSocket.OPEN
+      const idleSec = Math.round((Date.now() - this.lastActivityAt) / 1000)
+      console.log(
+        `jetstream ${connected ? 'alive' : 'DISCONNECTED'} — ` +
+          `${this.eventsSinceReport} events, ${this.indexedSinceReport} posts indexed, ` +
+          `last traffic ${idleSec}s ago`,
+      )
+      this.eventsSinceReport = 0
+      this.indexedSinceReport = 0
+    }, this.opts.livenessInterval)
   }
 
   private async handleMessage(raw: string) {
@@ -139,6 +240,8 @@ export class JetstreamSubscription {
         })
         .onConflict((oc) => oc.doNothing())
         .execute()
+      this.indexedSinceReport++
+      console.log(`indexed ${uri}`)
     } else if (commit.operation === 'delete') {
       await this.db.deleteFrom('post').where('uri', '=', uri).execute()
     }
